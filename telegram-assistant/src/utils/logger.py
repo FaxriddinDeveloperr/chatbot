@@ -19,6 +19,24 @@ def setup_logging() -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
+def humanize_send_error(exc: Exception) -> str:
+    """Telegram'ning xom xato matnini tushunarli, harakat qilsa bo'ladigan
+    izohga aylantiradi. Tanilmagan xatolar o'zgarishsiz qaytariladi."""
+    text = str(exc)
+    if "business_peer_invalid" in text.lower():
+        return (
+            "Bu odamga Business orqali xabar yubora olmadim — bu Telegram'ning "
+            "o'zidagi cheklov, kodda xato emas. Sabab: shu aniq chat uchun "
+            "botning yozish ruxsati o'chirilgan bo'lishi mumkin.\n\n"
+            "Tekshiring: 1) shu odam bilan suhbatni oching — yuqorida bot "
+            "nomi/belgisi ko'rinsa, ruxsat yoqilganini tasdiqlang; "
+            "2) Sozlamalar → Telegram Business → Chatbots → bu bot → chat "
+            "ruxsatlarida bu odam \"Exclude\" qilinmaganini tekshiring.\n\n"
+            f"(Xom xato: {text})"
+        )
+    return text
+
+
 async def report_error(context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
     """Xatoni bazaga yozadi va ownerga yuboradi. Odamga HECH QACHON yuborilmaydi."""
     logging.getLogger("assistant").error(text)

@@ -26,7 +26,7 @@ from ..services.llm import LLMError, generate_reply
 from ..services.prompt import build_system_prompt
 from ..services.store import store
 from ..utils.keyboards import approval_kb
-from ..utils.logger import report_error
+from ..utils.logger import humanize_send_error, report_error
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +154,9 @@ async def handle_approval_callback(update: Update, context: ContextTypes.DEFAULT
                 status=STATUS_APPROVED,
             )
         except Exception as exc:  # noqa: BLE001
-            await report_error(context, f"Tasdiqlangan javobni yuborib bo'lmadi: {exc}")
+            await report_error(
+                context, f"Tasdiqlangan javobni yuborib bo'lmadi: {humanize_send_error(exc)}"
+            )
             return
         await query.edit_message_text(_render_text(data) + "\n\n✅ Yuborildi.")
 
@@ -223,7 +225,9 @@ async def handle_approval_edit_text(
             status=STATUS_EDITED,
         )
     except Exception as exc:  # noqa: BLE001
-        await report_error(context, f"Tahrirlangan javobni yuborib bo'lmadi: {exc}")
+        await report_error(
+            context, f"Tahrirlangan javobni yuborib bo'lmadi: {humanize_send_error(exc)}"
+        )
         return True
 
     try:

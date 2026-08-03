@@ -104,7 +104,7 @@ def register_job(app_or_context, scheduled_id: int, send_at_utc: datetime) -> No
 
 async def send_due_message(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Rejalashtirilgan xabarni yuborish vaqti keldi."""
-    from ..utils.logger import report_error  # aylanma importni oldini olish uchun shu yerda
+    from ..utils.logger import humanize_send_error, report_error  # aylanma import
 
     scheduled_id = int(context.job.data)
     msg = await repo.get_scheduled_message(scheduled_id)
@@ -128,7 +128,9 @@ async def send_due_message(context: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception as exc:  # noqa: BLE001
         await repo.set_scheduled_status(scheduled_id, SCHED_FAILED)
         await report_error(
-            context, f"Rejalashtirilgan xabarni yuborib bo'lmadi ({msg.person_name}): {exc}"
+            context,
+            f"Rejalashtirilgan xabarni yuborib bo'lmadi ({msg.person_name}): "
+            f"{humanize_send_error(exc)}",
         )
         return
 

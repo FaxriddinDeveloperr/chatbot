@@ -34,7 +34,7 @@ from ..services.rate_limit import rate_limiter
 from ..services.store import store
 from ..stt import get_stt
 from ..tts import get_tts
-from ..utils.logger import report_error
+from ..utils.logger import humanize_send_error, report_error
 from .approval import create_approval
 
 logger = logging.getLogger(__name__)
@@ -186,7 +186,9 @@ async def handle_business_message(update: Update, context: ContextTypes.DEFAULT_
                 status=STATUS_AUTO,
             )
         except Exception as exc:  # noqa: BLE001
-            await report_error(context, f"Javob yuborishda xato ({user.full_name}): {exc}")
+            await report_error(
+                context, f"Javob yuborishda xato ({user.full_name}): {humanize_send_error(exc)}"
+            )
     else:
         # UNKNOWN — ownerdan tasdiq so'raymiz
         await create_approval(
