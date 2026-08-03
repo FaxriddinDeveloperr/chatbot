@@ -13,6 +13,7 @@ boshlanmagan foydalanuvchiga xabar yozishga ruxsat bermaydi.
 
 from __future__ import annotations
 
+import re
 import uuid
 
 from telegram import Message, Update
@@ -25,16 +26,24 @@ from ..utils import keyboards
 from .commands import guard, is_owner
 
 _PROMPT_RECIPIENTS = (
-    "👤 Kimga yubormoqchisiz?\n\n"
-    "Ism-familiya yoki @username yozing. Bir nechta odamga yubormoqchi "
-    "bo'lsangiz, vergul bilan ajrating:\n\"Bahodir, @aziza_k\"\n\n"
+    "📅 Xabar rejalashtiramiz. 3 ta savol beraman — har biriga ALOHIDA xabar "
+    "bilan javob bering:\n"
+    "1️⃣ Kimga?  2️⃣ Qachon?  3️⃣ Nima deb yozay?\n\n"
+    "1️⃣ Hozircha FAQAT kimga ekanini yozing — ism-familiya yoki @username "
+    "(vaqt va matnni keyin alohida so'rayman).\n"
+    "Bir nechta odamga bo'lsa, vergul bilan ajrating: \"Bahodir, @aziza_k\"\n\n"
     "⚠️ Faqat avval sizga yozgan odamlarga yubora olaman (/people ro'yxati)."
 )
 _PROMPT_TIME = (
-    "🕐 Qachon yuborilsin?\n\n"
+    "2️⃣ Endi qachon yuborilishini yozing.\n\n"
     "Masalan: 14:00 | bugun 18:30 | ertaga 09:00 | 05.08 14:00 | "
     "30 daqiqadan keyin"
 )
+_PROMPT_MESSAGE = "3️⃣ Endi nima deb yozay? Faqat xabar matnini yuboring."
+
+# "kimga" bosqichida owner butun so'zlamani (vaqt+matn bilan) yuborib
+# yuborgan bo'lsa aniqlash uchun — aniqroq eslatma berish maqsadida.
+_LOOKS_LIKE_FULL_REQUEST = re.compile(r":|\d{1,2}[:.]\d{2}|\bsoat\b", re.IGNORECASE)
 
 
 async def cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -127,9 +136,16 @@ async def handle_schedule_recipients_text(
         known = await repo.all_people(15)
         known_text = ", ".join(p.full_name or p.username or str(p.id) for p in known)
         context.user_data["await"] = ("sched_recipients",)
+        hint = ""
+        if _LOOKS_LIKE_FULL_REQUEST.search(update.message.text):
+            hint = (
+                "\n\n💡 Bu bosqichda FAQAT ism yoki @username yozing — vaqt va "
+                "xabar matnini ALOHIDA, keyingi savollarda so'rayman."
+            )
         await update.message.reply_text(
             f"❌ Topilmadi: {', '.join(not_found)}\n\n"
-            f"Bilingan odamlar: {known_text or 'hali hech kim yo‘q'}\n\n"
+            f"Bilingan odamlar: {known_text or 'hali hech kim yo‘q'}"
+            f"{hint}\n\n"
             "Qaytadan yozing (ism yoki @username):"
         )
         return True
@@ -165,7 +181,7 @@ async def handle_schedule_time_text(
     draft["send_at_utc"] = scheduler.to_utc(send_at_local)
     draft["send_at_display"] = send_at_local.strftime("%d.%m.%Y %H:%M")
     context.user_data["await"] = ("sched_message", token)
-    await update.message.reply_text("💬 Nima deb yozay? Xabar matnini yuboring.")
+    await update.message.reply_text(_PROMPT_MESSAGE)
     return True
 
 
