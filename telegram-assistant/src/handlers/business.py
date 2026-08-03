@@ -17,7 +17,7 @@ import random
 from pathlib import Path
 
 from telegram import Update
-from telegram.constants import ChatAction
+from telegram.constants import ChatAction, ChatType
 from telegram.ext import ContextTypes
 
 from ..config import config
@@ -111,6 +111,12 @@ async def handle_business_message(update: Update, context: ContextTypes.DEFAULT_
     """Har bir kelgan business xabar uchun asosiy mantiq."""
     msg = update.business_message
     if msg is None or msg.from_user is None:
+        return
+
+    # Botning o'z xabarlari business ulanish orqali shu chatga aks etib
+    # qaytishi mumkin (o'z-o'ziga javob berish siklini oldini olish uchun),
+    # va guruh/kanal emas — faqat shaxsiy (1-1) suhbatlar bilan ishlaymiz.
+    if msg.from_user.id == context.bot.id or msg.chat.type != ChatType.PRIVATE:
         return
 
     bconn_id = msg.business_connection_id
