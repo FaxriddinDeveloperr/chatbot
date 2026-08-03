@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import delete, desc, func, select, update
+from sqlalchemy import delete, desc, func, or_, select, update
 
 from .models import (
     ChatMessage,
@@ -12,6 +12,8 @@ from .models import (
     KnowledgeSection,
     Person,
     ResponseLog,
+    SCHED_PENDING,
+    ScheduledMessage,
     utcnow,
 )
 from .session import async_session
@@ -68,6 +70,26 @@ async def find_by_username(username: str) -> Person | None:
             select(Person).where(func.lower(Person.username) == username.lower().lstrip("@"))
         )
         return row.scalars().first()
+
+
+async def find_people_by_name(query: str) -> list[Person]:
+    """Ism yoki username bo'yicha qidiradi (katta-kichik harf farqsiz, qisman mos)."""
+    like = f"%{query.strip().lstrip('@')}%"
+    async with async_session() as s:
+        rows = await s.execute(
+            select(Person).where(
+                or_(Person.full_name.ilike(like), Person.username.ilike(like))
+            )
+        )
+        return list(rows.scalars().all())
+
+
+async def all_people(limit: int = 50) -> list[Person]:
+    async with async_session() as s:
+        rows = await s.execute(
+            select(Person).order_by(desc(Person.last_message_at)).limit(limit)
+        )
+        return list(rows.scalars().all())
 
 
 # ---------------------------------------------------------------- Chat history
@@ -239,3 +261,44 @@ async def stats_since(since: datetime) -> dict:
             top.append((name, cnt))
 
     return {"incoming": incoming, "by_status": by_status, "top": top}
+
+
+# ---------------------------------------------------------------- Scheduled messages
+
+
+async def create_scheduled_message(
+    person_id: int, person_name: str, text: str, send_at: datetime
+) -> ScheduledMessage:
+    async with async_session() as s:
+        msg = ScheduledMessage(
+            person_id=person_id, person_name=person_name, text=text, send_at=send_at
+        )
+        s.add(msg)
+        await s.commit()
+        await s.refresh(msg)
+        return msg
+
+
+async def get_scheduled_message(scheduled_id: int) -> ScheduledMessage | None:
+    async with async_session() as s:
+        return await s.get(ScheduledMessage, scheduled_id)
+
+
+async def pending_scheduled_messages() -> list[ScheduledMessage]:
+    async with async_session() as s:
+        rows = await s.execute(
+            select(ScheduledMessage)
+            .where(ScheduledMessage.status == SCHED_PENDING)
+            .order_by(ScheduledMessage.send_at)
+        )
+        return list(rows.scalars().all())
+
+
+async def set_scheduled_status(scheduled_id: int, status: str) -> None:
+    async with async_session() as s:
+        await s.execute(
+            update(ScheduledMessage)
+            .where(ScheduledMessage.id == scheduled_id)
+            .values(status=status)
+        )
+        await s.commit()

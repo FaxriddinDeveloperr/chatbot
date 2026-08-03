@@ -32,6 +32,10 @@ def main_menu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("🐞 Xatoliklar", callback_data="menu:logs"),
             ],
             [
+                InlineKeyboardButton("📅 Yangi reja", callback_data="sch:start"),
+                InlineKeyboardButton("🗓 Rejalar ro'yxati", callback_data="sch:list"),
+            ],
+            [
                 InlineKeyboardButton("🔴 Off (bot ishlasin)", callback_data="mode:active"),
                 InlineKeyboardButton("🟢 On (bot jim)", callback_data="mode:auto"),
             ],
@@ -217,6 +221,48 @@ def choices(prefix: str, options: list[str], back: str = "st:menu") -> InlineKey
         for i in range(0, len(options), 3)
     ]
     rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data=back)])
+    return InlineKeyboardMarkup(rows)
+
+
+def schedule_confirm(token: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("✅ Ha, yubor", callback_data=f"sch:confirm:{token}"),
+                InlineKeyboardButton("❌ Bekor", callback_data=f"sch:cancel:{token}"),
+            ]
+        ]
+    )
+
+
+def schedule_pick(token: str, candidates: list[Person]) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                f"{p.full_name or p.username or p.id}"
+                + (f" (@{p.username})" if p.username else ""),
+                callback_data=f"sch:pick:{token}:{p.id}",
+            )
+        ]
+        for p in candidates
+    ]
+    rows.append([InlineKeyboardButton("❌ Bekor", callback_data=f"sch:cancel:{token}")])
+    return InlineKeyboardMarkup(rows)
+
+
+def scheduled_list(items) -> InlineKeyboardMarkup:
+    from ..services.scheduler import TASHKENT_OFFSET
+
+    rows = [
+        [
+            InlineKeyboardButton(
+                f"❌ {item.person_name} — {(item.send_at + TASHKENT_OFFSET).strftime('%d.%m %H:%M')}",
+                callback_data=f"sch:del:{item.id}",
+            )
+        ]
+        for item in items
+    ]
+    rows.append([InlineKeyboardButton("⬅️ Bosh menyu", callback_data="menu:main")])
     return InlineKeyboardMarkup(rows)
 
 

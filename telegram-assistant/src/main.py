@@ -25,7 +25,8 @@ from telegram.ext import (
 from .config import config
 from .database.seed import seed
 from .database.session import init_db
-from .handlers import approval, business, commands, inputs, knowledge, people, settings
+from .handlers import approval, business, commands, inputs, knowledge, people, schedule, settings
+from .services.scheduler import reschedule_all_pending
 from .utils.logger import report_error, setup_logging
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,8 @@ BOT_COMMANDS = [
     BotCommand("stats", "Statistika"),
     BotCommand("history", "Oxirgi javoblar"),
     BotCommand("logs", "Oxirgi xatoliklar"),
+    BotCommand("schedule", "Xabarni vaqti-vaqtida yuborishni rejalashtirish"),
+    BotCommand("scheduled", "Rejalashtirilgan xabarlar ro'yxati"),
 ]
 
 
@@ -52,6 +55,7 @@ async def on_startup(app: Application) -> None:
         await app.bot.set_my_commands(BOT_COMMANDS)
     except Exception:  # noqa: BLE001
         logger.warning("Bot komandalarini o'rnatib bo'lmadi")
+    await reschedule_all_pending(app)
     logger.info("Bot tayyor. Owner ID: %s", config.owner_id or "SOZLANMAGAN!")
 
 
@@ -97,12 +101,15 @@ def main() -> None:
     app.add_handler(CommandHandler("knowledge", knowledge.cmd_knowledge, filters=private))
     app.add_handler(CommandHandler("people", people.cmd_people, filters=private))
     app.add_handler(CommandHandler("settings", settings.cmd_settings, filters=private))
+    app.add_handler(CommandHandler("schedule", schedule.cmd_schedule, filters=private))
+    app.add_handler(CommandHandler("scheduled", schedule.cmd_scheduled, filters=private))
 
     # Inline tugmalar
     app.add_handler(CallbackQueryHandler(approval.handle_approval_callback, pattern=r"^ap:"))
     app.add_handler(CallbackQueryHandler(knowledge.handle_kb_callback, pattern=r"^kb:"))
     app.add_handler(CallbackQueryHandler(people.handle_people_callback, pattern=r"^pp:"))
     app.add_handler(CallbackQueryHandler(settings.handle_settings_callback, pattern=r"^st:"))
+    app.add_handler(CallbackQueryHandler(schedule.handle_schedule_callback, pattern=r"^sch:"))
     app.add_handler(
         CallbackQueryHandler(commands.handle_menu_callback, pattern=r"^(menu:|mode:|sts:)")
     )

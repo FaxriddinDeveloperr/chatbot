@@ -129,6 +129,8 @@ sudo systemctl restart assistant
 | `/stats` | Bugun / hafta / oy statistikasi |
 | `/history` | Oxirgi 10 ta javob |
 | `/logs` | Oxirgi xatoliklar |
+| `/schedule` | Xabarni ma'lum vaqtda yuborishni rejalashtirish |
+| `/scheduled` | Rejalashtirilgan xabarlar ro'yxati (bekor qilish mumkin) |
 
 ### Ish mantiqi
 
@@ -141,6 +143,31 @@ sudo systemctl restart assistant
    (1 soatda javob bermasangiz so'rov bekor bo'ladi)
 4. **Blacklist** — umuman javob yo'q
 5. Siz istalgan chatga o'zingiz yozsangiz — bot darhol jim bo'ladi
+
+### Xabarni rejalashtirish (/schedule)
+
+`/schedule` bilan erkin matnda kimga, qachon va nima deb yozish kerakligini
+bitta xabarda yozasiz — imlo xatolari bo'lsa ham tushunadi:
+
+```
+"Bahodirga bugun soat 14:00da: Salom, hozir bandman, ertaga ko'rishamiz"
+```
+
+Bir nechta odamga:
+
+```
+"Bahodir va Azizaga ertaga soat 9:00da: Yig'ilish bekor qilindi"
+```
+
+- Ism bir nechta odamga mos kelsa — kimni nazarda tutganingizni so'raydi
+- Yuborishdan oldin har doim tasdiq so'raladi (✅/❌)
+- Bot qayta ishga tushsa ham (server qayta yuklansa) rejalashtirilgan
+  xabarlar yo'qolmaydi — bazadan qayta yuklanadi
+- `/scheduled` — kutayotgan xabarlar ro'yxati, har birini bekor qilish tugmasi bilan
+
+**Cheklov:** bot faqat avval sizga Business orqali yozgan odamlarga xabar
+yubora oladi (`/people` ro'yxatidagilar) — Telegram hali suhbat boshlamagan
+odamga botning/business ulanishning birinchi bo'lib yozishiga ruxsat bermaydi.
 
 ### Ovozli xabarlar
 
