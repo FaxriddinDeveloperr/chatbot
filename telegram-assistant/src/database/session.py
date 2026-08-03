@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import event, text
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker, create_async_engine
 
 from ..config import config
 from .models import Base
@@ -24,7 +24,21 @@ def _set_sqlite_pragma(dbapi_connection, connection_record) -> None:
     cursor.close()
 
 
+async def _drop_legacy_people_columns(conn: AsyncConnection) -> None:
+    """Endi ishlatilmaydigan eski ustunlarni (level, message_count) olib
+    tashlaydi — ularning NOT NULL cheklovi (default'siz) yangi odam
+    yozishga to'sqinlik qilar edi, chunki joriy model ularni bilmaydi."""
+    rows = (await conn.execute(text("PRAGMA table_info(people)"))).fetchall()
+    columns = {row[1] for row in rows}
+    if "level" in columns:
+        await conn.execute(text("DROP INDEX IF EXISTS ix_people_level"))
+        await conn.execute(text("ALTER TABLE people DROP COLUMN level"))
+    if "message_count" in columns:
+        await conn.execute(text("ALTER TABLE people DROP COLUMN message_count"))
+
+
 async def init_db() -> None:
-    """Jadvallarni yaratadi (mavjudlarini o'zgartirmaydi)."""
+    """Jadvallarni yaratadi (mavjudlarini o'zgartirmaydi) va eski ustunlarni tozalaydi."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _drop_legacy_people_columns(conn)
