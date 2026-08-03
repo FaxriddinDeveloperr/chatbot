@@ -10,6 +10,7 @@ import logging
 import sys
 
 from telegram import BotCommand, Update
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -56,6 +57,10 @@ async def on_startup(app: Application) -> None:
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Global xatolik ushlagichi — ownerga xabar, odamga hech narsa."""
+    if isinstance(context.error, BadRequest) and "Message is not modified" in str(context.error):
+        # Zararsiz holat: xuddi shu tugma ikki marta bosilgan yoki eskirgan
+        # callback qayta yuborilgan — mazmun allaqachon bir xil.
+        return
     await report_error(context, f"Kutilmagan xatolik: {context.error!r}")
 
 
