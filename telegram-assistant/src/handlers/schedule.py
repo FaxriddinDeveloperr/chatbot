@@ -11,9 +11,9 @@ Ikki yo'l bilan ishlaydi:
 Ism qidiruvi imlo xatolariga chidamli (masalan "Abdulvahhob" — "Abdulvahob"),
 lekin baribir topilmasa — bosqichma-bosqich rejimga muammosiz qaytiladi.
 
-MUHIM CHEKLOV: bot faqat avvaldan Business orqali yozgan (`/people`
-ro'yxatidagi) odamlarga xabar yubora oladi — Telegram bot hali suhbat
-boshlanmagan foydalanuvchiga xabar yozishga ruxsat bermaydi.
+MUHIM CHEKLOV: bot faqat avvaldan Business orqali sizga yozgan odamlarga
+xabar yubora oladi — Telegram bot hali suhbat boshlanmagan foydalanuvchiga
+xabar yozishga ruxsat bermaydi.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ _PROMPT_RECIPIENTS = (
     "ertaga boraman\"\n\n"
     "Yoki shunchaki kimga ekanini yozing (ism yoki @username) — qachon va "
     "nima deb yozishni keyin alohida so'rayman:\n\"Bahodir, @aziza_k\"\n\n"
-    "⚠️ Faqat avval sizga yozgan odamlarga yubora olaman (/people ro'yxati)."
+    "⚠️ Faqat avval sizga Business orqali yozgan odamlarga yubora olaman."
 )
 _PROMPT_TIME = (
     "🕐 Qachon yuborilsin?\n\n"
@@ -119,7 +119,7 @@ async def _advance(token: str, context: ContextTypes.DEFAULT_TYPE, replyable) ->
 
 
 async def _resolve_recipients(names: list[str]) -> tuple[dict, dict, list]:
-    """Har bir ismni /people ro'yxati bilan solishtiradi (imlo xatolariga chidamli).
+    """Har bir ismni bazadagi kontaktlar bilan solishtiradi (imlo xatolariga chidamli).
 
     Qaytaradi: (resolved {ism: (id, ko'rinadigan_nom)}, ambiguous {ism: [Person]}, not_found [ism]).
     """

@@ -7,9 +7,9 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$APP_DIR"
 
-echo "==> Tizim paketlari o'rnatilmoqda (python, ffmpeg)..."
+echo "==> Tizim paketlari o'rnatilmoqda (python)..."
 sudo apt-get update -y
-sudo apt-get install -y python3 python3-venv python3-pip ffmpeg
+sudo apt-get install -y python3 python3-venv python3-pip
 
 echo "==> Virtual muhit yaratilmoqda..."
 python3 -m venv .venv

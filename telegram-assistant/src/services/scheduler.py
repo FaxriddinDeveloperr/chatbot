@@ -226,7 +226,6 @@ async def send_due_message(context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     await repo.set_scheduled_status(scheduled_id, SCHED_SENT)
-    await repo.save_message(msg.person_id, "assistant", msg.text)
     await repo.log_response(msg.person_id, msg.person_id, msg.person_name, "", msg.text, "auto")
     try:
         await context.bot.send_message(

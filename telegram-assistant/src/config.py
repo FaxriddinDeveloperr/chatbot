@@ -20,8 +20,6 @@ class Config:
     owner_id: int = int(os.getenv("OWNER_ID", "0") or 0)
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
-    tts_provider: str = os.getenv("TTS_PROVIDER", "edge")
-    stt_provider: str = os.getenv("STT_PROVIDER", "gemini")
     db_path: Path = BASE_DIR / os.getenv("DB_PATH", "data/bot.db")
 
 

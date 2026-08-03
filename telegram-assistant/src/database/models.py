@@ -1,23 +1,13 @@
-"""SQLAlchemy modellari: odamlar, xabarlar, bilim bazasi, sozlamalar, loglar."""
+"""SQLAlchemy modellari: kontaktlar, rejalashtirilgan xabarlar, sozlamalar, loglar."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String, Text
+from sqlalchemy import BigInteger, DateTime, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-# Ruxsat darajalari
-LEVEL_WHITELIST = "whitelist"
-LEVEL_UNKNOWN = "unknown"
-LEVEL_BLACKLIST = "blacklist"
-
-# Javob loglari statuslari
-STATUS_AUTO = "auto"          # whitelist — avtomatik yuborildi
-STATUS_APPROVED = "approved"  # owner tasdiqladi
-STATUS_EDITED = "edited"      # owner tahrirlab yubordi
-STATUS_REJECTED = "rejected"  # owner bekor qildi
-STATUS_EXPIRED = "expired"    # 1 soatda tasdiqlanmadi
+STATUS_AUTO = "auto"  # yuborilgan rejalashtirilgan xabar (/history uchun)
 
 # Rejalashtirilgan xabar statuslari
 SCHED_PENDING = "pending"
@@ -36,43 +26,15 @@ class Base(DeclarativeBase):
 
 
 class Person(Base):
-    """Botga yozgan odam va uning ruxsat darajasi."""
+    """Business orqali sizga yozgan odam — /schedule shulardan qidiradi."""
 
     __tablename__ = "people"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)  # Telegram user id
     username: Mapped[str | None] = mapped_column(String(64), nullable=True)
     full_name: Mapped[str] = mapped_column(String(160), default="")
-    level: Mapped[str] = mapped_column(String(16), default=LEVEL_UNKNOWN, index=True)
-    message_count: Mapped[int] = mapped_column(Integer, default=0)
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-
-
-class ChatMessage(Base):
-    """Suhbat tarixi — LLM konteksti uchun."""
-
-    __tablename__ = "chat_messages"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
-    user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
-    role: Mapped[str] = mapped_column(String(16))  # "user" | "assistant"
-    text: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
-
-
-class KnowledgeSection(Base):
-    """Bilim bazasi bo'limi — bot shulardan system prompt yasaydi."""
-
-    __tablename__ = "knowledge_sections"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    title: Mapped[str] = mapped_column(String(120))
-    content: Mapped[str] = mapped_column(Text)
-    position: Mapped[int] = mapped_column(Integer, default=0)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class Setting(Base):
@@ -85,7 +47,7 @@ class Setting(Base):
 
 
 class ResponseLog(Base):
-    """Yuborilgan/rad etilgan javoblar tarixi."""
+    """Yuborilgan rejalashtirilgan xabarlar tarixi — /history uchun."""
 
     __tablename__ = "response_logs"
 
