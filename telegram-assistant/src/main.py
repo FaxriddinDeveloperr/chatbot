@@ -59,11 +59,16 @@ async def on_startup(app: Application) -> None:
     logger.info("Bot tayyor. Owner ID: %s", config.owner_id or "SOZLANMAGAN!")
 
 
+# Bot uzoq vaqt o'chiq turgandan keyin to'plangan eskirgan yangilanishlarni
+# qayta ishlashda chiqadigan, hech qanday zarar keltirmaydigan xatoliklar.
+_BENIGN_BAD_REQUESTS = ("Message is not modified", "Query is too old")
+
+
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Global xatolik ushlagichi — ownerga xabar, odamga hech narsa."""
-    if isinstance(context.error, BadRequest) and "Message is not modified" in str(context.error):
-        # Zararsiz holat: xuddi shu tugma ikki marta bosilgan yoki eskirgan
-        # callback qayta yuborilgan — mazmun allaqachon bir xil.
+    if isinstance(context.error, BadRequest) and any(
+        s in str(context.error) for s in _BENIGN_BAD_REQUESTS
+    ):
         return
     await report_error(context, f"Kutilmagan xatolik: {context.error!r}")
 
