@@ -1,31 +1,33 @@
-"""Rejalashtirilgan xabarlar: tabiiy tildagi so'rovni tahlil qilish va yuborish.
+"""Rejalashtirilgan xabarlar: vaqt/qabul qiluvchi tahlili va yuborish.
 
-Owner "Bahodirga bugun soat 14:00da: Salom, band edim" kabi erkin matn
-yozadi — Gemini buni (kim, qachon, nima) ga ajratadi. Yuborish vaqti
+Hech qanday AI ishlatilmaydi — kim-qachon-nima bosqichma-bosqich (wizard)
+so'raladi va oddiy qoidalar bilan tahlil qilinadi, shuning uchun Gemini
+kvotasi tugab qolsa ham bu funksiya 100% ishlayveradi. Yuborish vaqti
 JobQueue orqali rejalashtiriladi; bot qayta ishga tushganda hali
 yuborilmagan xabarlar bazadan o'qib qayta rejalashtiriladi (`reschedule_all_pending`).
 """
 
 from __future__ import annotations
 
-import json
 import logging
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+import re
+from datetime import date, datetime, time, timedelta
 
-from google.genai import types
 from telegram.ext import Application, ContextTypes
 
 from ..config import config
 from ..database import repo
-from ..database.models import SCHED_SENT, SCHED_FAILED, utcnow
-from .llm import LLMError, current_model, get_client
+from ..database.models import SCHED_FAILED, SCHED_SENT, utcnow
 from .store import store
 
 logger = logging.getLogger(__name__)
 
 # Toshkent doim UTC+5, yozgi vaqtga o'tish yo'q — shuning uchun sobit offset yetarli.
 TASHKENT_OFFSET = timedelta(hours=5)
+
+_TIME_RE = re.compile(r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)")
+_DATE_RE = re.compile(r"(?<!\d)(\d{1,2})[./](\d{1,2})(?:[./](\d{4}))?(?!\d)")
+_RELATIVE_RE = re.compile(r"(\d+)\s*(daqiqa|minut|soat)")
 
 
 def local_now() -> datetime:
@@ -36,80 +38,61 @@ def to_utc(local_dt: datetime) -> datetime:
     return local_dt - TASHKENT_OFFSET
 
 
-@dataclass
-class ScheduleParse:
-    understood: bool
-    recipients: list[str] = field(default_factory=list)
-    send_at_local: datetime | None = None
-    message: str = ""
+def split_recipients(text: str) -> list[str]:
+    """'Bahodir, @aziza_k va Vali' -> ['Bahodir', '@aziza_k', 'Vali']."""
+    parts = re.split(r",|\bva\b|\bhamda\b|\+", text, flags=re.IGNORECASE)
+    return [p.strip() for p in parts if p.strip()]
 
 
-async def parse_schedule_text(text: str) -> ScheduleParse:
-    """Owner'ning erkin matnini (kim, qachon, nima) ga ajratadi."""
-    now = local_now()
-    system_prompt = (
-        "Sen shaxsiy yordamchisan. Owner senga xabarni KIMGA, QACHON va NIMA deb "
-        "yozish kerakligini tabiiy tilda aytadi — imlo xatolari, so'zlashuv uslubi "
-        "bo'lishi mumkin (masalan 'soat' o'rniga 'sa', 'hozir' o'rniga 'hodir'). "
-        "Buni to'g'ri tushunib JSON qilib qaytar.\n\n"
-        f"Hozirgi mahalliy sana-vaqt (Toshkent, UTC+5): "
-        f"{now.strftime('%Y-%m-%d %H:%M')} ({now.strftime('%A')})\n\n"
-        "QOIDALAR:\n"
-        "- recipients: qabul qiluvchilarning ismlari ro'yxati (masalan "
-        '["Bahodir", "Aziza"]). Agar bittagina bo\'lsa ham ro\'yxat qaytar.\n'
-        "- send_at: xabar yuborilishi kerak bo'lgan mahalliy sana-vaqt, "
-        "ISO formatda \"YYYY-MM-DDTHH:MM:SS\". Agar faqat vaqt aytilgan bo'lsa "
-        "(sana yo'q) va bu vaqt bugun uchun allaqachon o'tib ketgan bo'lsa — "
-        "ertangi kunga o'tkaz. Agar vaqt umuman aytilmagan bo'lsa — hozirdan "
-        "5 daqiqa keyin.\n"
-        "- message: owner talab qilgan, qabul qiluvchiga yuborilishi kerak "
-        "bo'lgan xabar matni (faqat shu matn, boshqa hech narsa qo'shma).\n"
-        "- understood: agar kimga va nima yozish kerakligini aniq tushungan "
-        "bo'lsang true, aks holda false."
-    )
+def parse_time_text(text: str, now_local: datetime) -> datetime | None:
+    """Oddiy qoidalar bilan sana-vaqtni ajratadi (AI ishlatilmaydi).
 
-    try:
-        response = await get_client().aio.models.generate_content(
-            model=await current_model(),
-            contents=[types.Content(role="user", parts=[types.Part.from_text(text=text)])],
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                temperature=0.1,
-                response_mime_type="application/json",
-                response_schema={
-                    "type": "OBJECT",
-                    "properties": {
-                        "understood": {"type": "BOOLEAN"},
-                        "recipients": {"type": "ARRAY", "items": {"type": "STRING"}},
-                        "send_at": {"type": "STRING"},
-                        "message": {"type": "STRING"},
-                    },
-                    "required": ["understood", "recipients", "send_at", "message"],
-                },
-            ),
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise LLMError(f"Rejalashtirish so'rovini tahlil qilib bo'lmadi: {exc}") from exc
+    Qo'llab-quvvatlanadi: "14:00", "bugun 18:30", "ertaga 09:00",
+    "05.08 14:00", "05.08.2026 14:00", "30 daqiqadan keyin", "2 soatdan keyin".
+    """
+    t = text.lower().strip()
 
-    try:
-        data = json.loads((response.text or "").strip())
-    except json.JSONDecodeError:
-        return ScheduleParse(understood=False)
+    rel = _RELATIVE_RE.search(t)
+    if rel and "keyin" in t:
+        n = int(rel.group(1))
+        unit = rel.group(2)
+        delta = timedelta(hours=n) if unit == "soat" else timedelta(minutes=n)
+        return now_local + delta
 
-    if not data.get("understood") or not data.get("recipients"):
-        return ScheduleParse(understood=False)
+    time_match = _TIME_RE.search(t)
+    if not time_match:
+        return None
+    hour, minute = int(time_match.group(1)), int(time_match.group(2))
+    if hour > 23 or minute > 59:
+        return None
 
-    try:
-        send_at_local = datetime.fromisoformat(str(data["send_at"]))
-    except ValueError:
-        return ScheduleParse(understood=False)
+    date_match = _DATE_RE.search(t)
+    if date_match:
+        day, month = int(date_match.group(1)), int(date_match.group(2))
+        year = int(date_match.group(3)) if date_match.group(3) else now_local.year
+        try:
+            candidate = datetime.combine(date(year, month, day), time(hour, minute))
+        except ValueError:
+            return None
+        if not date_match.group(3) and candidate < now_local:
+            candidate = candidate.replace(year=year + 1)
+        return candidate
 
-    return ScheduleParse(
-        understood=True,
-        recipients=[str(r).strip() for r in data["recipients"] if str(r).strip()],
-        send_at_local=send_at_local,
-        message=str(data.get("message", "")).strip(),
-    )
+    if "indinga" in t:
+        target_day = now_local.date() + timedelta(days=2)
+    elif "ertaga" in t or "erta" in t:
+        target_day = now_local.date() + timedelta(days=1)
+    elif "bugun" in t:
+        target_day = now_local.date()
+    else:
+        # Faqat vaqt aytilgan — o'tib ketgan bo'lsa ertangi kunga
+        target_day = now_local.date()
+        candidate = datetime.combine(target_day, time(hour, minute))
+        if candidate < now_local:
+            target_day += timedelta(days=1)
+        return datetime.combine(target_day, time(hour, minute))
+
+    return datetime.combine(target_day, time(hour, minute))
 
 
 def register_job(app_or_context, scheduled_id: int, send_at_utc: datetime) -> None:

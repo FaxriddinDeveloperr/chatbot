@@ -146,18 +146,14 @@ sudo systemctl restart assistant
 
 ### Xabarni rejalashtirish (/schedule)
 
-`/schedule` bilan erkin matnda kimga, qachon va nima deb yozish kerakligini
-bitta xabarda yozasiz — imlo xatolari bo'lsa ham tushunadi:
+`/schedule` 3 bosqichli — **AI ishlatilmaydi**, shuning uchun Gemini kvotasi
+tugab qolsa ham 100% ishlayveradi:
 
-```
-"Bahodirga bugun soat 14:00da: Salom, hozir bandman, ertaga ko'rishamiz"
-```
-
-Bir nechta odamga:
-
-```
-"Bahodir va Azizaga ertaga soat 9:00da: Yig'ilish bekor qilindi"
-```
+1. **Kimga?** — ism-familiya yoki `@username` (bir nechta bo'lsa vergul bilan:
+   `Bahodir, @aziza_k`)
+2. **Qachon?** — `14:00` | `bugun 18:30` | `ertaga 09:00` | `05.08 14:00` |
+   `30 daqiqadan keyin`
+3. **Nima deb yozay?** — xabar matni
 
 - Ism bir nechta odamga mos kelsa — kimni nazarda tutganingizni so'raydi
 - Yuborishdan oldin har doim tasdiq so'raladi (✅/❌)
