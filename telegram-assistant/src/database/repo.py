@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from difflib import SequenceMatcher
 
 from sqlalchemy import delete, desc, func, or_, select, update
 
@@ -72,16 +73,43 @@ async def find_by_username(username: str) -> Person | None:
         return row.scalars().first()
 
 
+def _word_is_close(query_word: str, target_word: str, threshold: float = 0.82) -> bool:
+    if len(query_word) < 3 or len(target_word) < 3:
+        return query_word == target_word
+    return SequenceMatcher(None, query_word, target_word).ratio() >= threshold
+
+
+def _fuzzy_matches(query: str, person: Person) -> bool:
+    """Bir necha harflik imlo xatosiga chidamli taqqoslash (masalan
+    'Abdulvahhob' — 'Abdulvahob'), tashqi kutubxonasiz (difflib, stdlib)."""
+    q_words = query.lower().split()
+    for field in (person.full_name, person.username):
+        if not field:
+            continue
+        target_words = field.lower().replace("_", " ").split()
+        if any(_word_is_close(qw, tw) for qw in q_words for tw in target_words):
+            return True
+    return False
+
+
 async def find_people_by_name(query: str) -> list[Person]:
-    """Ism yoki username bo'yicha qidiradi (katta-kichik harf farqsiz, qisman mos)."""
-    like = f"%{query.strip().lstrip('@')}%"
+    """Ism yoki username bo'yicha qidiradi: avval aniq (qisman) mos kelish,
+    hech narsa topilmasa — imlo xatolariga chidamli taqqoslash bilan."""
+    q = query.strip().lstrip("@")
+    like = f"%{q}%"
     async with async_session() as s:
         rows = await s.execute(
             select(Person).where(
                 or_(Person.full_name.ilike(like), Person.username.ilike(like))
             )
         )
-        return list(rows.scalars().all())
+        exact = list(rows.scalars().all())
+        if exact:
+            return exact
+
+        all_rows = list((await s.execute(select(Person))).scalars().all())
+
+    return [p for p in all_rows if _fuzzy_matches(q, p)]
 
 
 async def all_people(limit: int = 50) -> list[Person]:

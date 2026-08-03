@@ -1,10 +1,15 @@
-"""Rejalashtirilgan xabarlar: /schedule (bosqichma-bosqich) va /scheduled (ro'yxat).
+"""Rejalashtirilgan xabarlar: /schedule (bosqichma-bosqich + bitta xabar) va /scheduled.
 
-Hech qanday AI ishlatilmaydi — 3 bosqich: (1) kimga — ism yoki @username,
-bir nechta bo'lsa vergul bilan; (2) qachon — "14:00" / "bugun 18:30" /
-"ertaga 09:00" / "05.08 14:00" / "30 daqiqadan keyin"; (3) nima deb yozish.
-Har bir bosqichda oddiy qoidalar bilan tahlil qilinadi (services/scheduler.py),
-shuning uchun Gemini kvotasi tugab qolsa ham bu funksiya 100% ishlaydi.
+Ikki yo'l bilan ishlaydi:
+1. **Bitta xabarda hammasi** — "Bahodirga va Abdulvahob akaga soat 10:00da: Salom..."
+   kabi yozsangiz, avval Gemini bilan tez ajratishga harakat qilinadi.
+2. **Bosqichma-bosqich (kafolatlangan)** — agar (1) ishlamasa (AI band/kvota
+   tugagan) yoki shunchaki ism/username yozsangiz, 3 ta savol beriladi:
+   kimga -> qachon -> nima deb yozish. Bu yo'l hech qanday AI'ga tayanmaydi,
+   shuning uchun har doim 100% ishlaydi.
+
+Ism qidiruvi imlo xatolariga chidamli (masalan "Abdulvahhob" — "Abdulvahob"),
+lekin baribir topilmasa — bosqichma-bosqich rejimga muammosiz qaytiladi.
 
 MUHIM CHEKLOV: bot faqat avvaldan Business orqali yozgan (`/people`
 ro'yxatidagi) odamlarga xabar yubora oladi — Telegram bot hali suhbat
@@ -22,27 +27,28 @@ from telegram.ext import ContextTypes
 from ..database import repo
 from ..database.models import Person, SCHED_CANCELLED
 from ..services import scheduler
-from ..utils import keyboards
+from ..services.llm import LLMError
 from .commands import guard, is_owner
+from ..utils import keyboards
 
 _PROMPT_RECIPIENTS = (
-    "📅 Xabar rejalashtiramiz. 3 ta savol beraman — har biriga ALOHIDA xabar "
-    "bilan javob bering:\n"
-    "1️⃣ Kimga?  2️⃣ Qachon?  3️⃣ Nima deb yozay?\n\n"
-    "1️⃣ Hozircha FAQAT kimga ekanini yozing — ism-familiya yoki @username "
-    "(vaqt va matnni keyin alohida so'rayman).\n"
-    "Bir nechta odamga bo'lsa, vergul bilan ajrating: \"Bahodir, @aziza_k\"\n\n"
+    "📅 Xabar rejalashtiramiz.\n\n"
+    "Hammasini bitta xabarda yozsangiz ham bo'ladi:\n"
+    "\"Bahodirga va Abdulvahob akaga soat 10:00da: Salom, band edim, "
+    "ertaga boraman\"\n\n"
+    "Yoki shunchaki kimga ekanini yozing (ism yoki @username) — qachon va "
+    "nima deb yozishni keyin alohida so'rayman:\n\"Bahodir, @aziza_k\"\n\n"
     "⚠️ Faqat avval sizga yozgan odamlarga yubora olaman (/people ro'yxati)."
 )
 _PROMPT_TIME = (
-    "2️⃣ Endi qachon yuborilishini yozing.\n\n"
+    "🕐 Qachon yuborilsin?\n\n"
     "Masalan: 14:00 | bugun 18:30 | ertaga 09:00 | 05.08 14:00 | "
     "30 daqiqadan keyin"
 )
-_PROMPT_MESSAGE = "3️⃣ Endi nima deb yozay? Faqat xabar matnini yuboring."
+_PROMPT_MESSAGE = "💬 Nima deb yozay? Faqat xabar matnini yuboring."
 
-# "kimga" bosqichida owner butun so'zlamani (vaqt+matn bilan) yuborib
-# yuborgan bo'lsa aniqlash uchun — aniqroq eslatma berish maqsadida.
+# Owner butun so'zlamani (vaqt+matn bilan) yuborganini aniqlash uchun —
+# AI orqali bitta xabarda tahlil qilishga urinish kerakligini bildiradi.
 _LOOKS_LIKE_FULL_REQUEST = re.compile(r":|\d{1,2}[:.]\d{2}|\bsoat\b", re.IGNORECASE)
 
 
@@ -82,8 +88,19 @@ async def _send(replyable, text: str, reply_markup=None) -> None:
         await replyable.edit_message_text(text, reply_markup=reply_markup)
 
 
-async def _advance_recipients(token: str, context: ContextTypes.DEFAULT_TYPE, replyable) -> None:
-    """Navbatdagi noaniq ismni so'raydi yoki (hammasi hal bo'lsa) vaqtni so'raydi."""
+def _confirm_text(draft: dict) -> str:
+    names = ", ".join(v[1] for v in draft["resolved"].values())
+    return (
+        "📅 Rejalashtirilgan xabar:\n\n"
+        f"👤 Kimga: {names}\n"
+        f"🕐 Qachon: {draft['send_at_display']}\n"
+        f"💬 Matn: \"{draft['message']}\"\n\n"
+        "Tasdiqlaysizmi?"
+    )
+
+
+async def _advance(token: str, context: ContextTypes.DEFAULT_TYPE, replyable) -> None:
+    """Draftda hali nima yetishmasa — o'shani so'raydi; hammasi tayyor bo'lsa tasdiq."""
     draft = context.bot_data["sched_drafts"][token]
 
     if draft["ambiguous_queue"]:
@@ -91,13 +108,18 @@ async def _advance_recipients(token: str, context: ContextTypes.DEFAULT_TYPE, re
         candidates = draft["candidates_by_name"][name]
         text = f"🤔 \"{name}\" nomiga bir nechta odam mos keldi. Kimni nazarda tutyapsiz?"
         await _send(replyable, text, keyboards.schedule_pick(token, candidates))
-    else:
+    elif draft["send_at_utc"] is None:
         context.user_data["await"] = ("sched_time", token)
         await _send(replyable, _PROMPT_TIME)
+    elif draft["message"] is None:
+        context.user_data["await"] = ("sched_message", token)
+        await _send(replyable, _PROMPT_MESSAGE)
+    else:
+        await _send(replyable, _confirm_text(draft), keyboards.schedule_confirm(token))
 
 
 async def _resolve_recipients(names: list[str]) -> tuple[dict, dict, list]:
-    """Har bir ismni /people ro'yxati bilan solishtiradi.
+    """Har bir ismni /people ro'yxati bilan solishtiradi (imlo xatolariga chidamli).
 
     Qaytaradi: (resolved {ism: (id, ko'rinadigan_nom)}, ambiguous {ism: [Person]}, not_found [ism]).
     """
@@ -121,45 +143,88 @@ async def _resolve_recipients(names: list[str]) -> tuple[dict, dict, list]:
     return resolved, ambiguous, not_found
 
 
+def _new_draft(resolved: dict, ambiguous: dict, message: str | None, send_at_utc, send_at_display) -> dict:
+    return {
+        "resolved": resolved,
+        "ambiguous_queue": list(ambiguous.keys()),
+        "candidates_by_name": ambiguous,
+        "message": message,
+        "send_at_utc": send_at_utc,
+        "send_at_display": send_at_display,
+    }
+
+
+async def _report_not_found(update: Update, not_found: list[str], show_plain_hint: bool) -> None:
+    known = await repo.all_people(15)
+    known_text = ", ".join(p.full_name or p.username or str(p.id) for p in known)
+    hint = ""
+    if show_plain_hint:
+        hint = (
+            "\n\n💡 Bu bosqichda FAQAT ism yoki @username yozing — vaqt va "
+            "xabar matnini ALOHIDA, keyingi savollarda so'rayman."
+        )
+    await update.message.reply_text(
+        f"❌ Topilmadi: {', '.join(not_found)}\n\n"
+        f"Bilingan odamlar: {known_text or 'hali hech kim yo‘q'}"
+        f"{hint}\n\n"
+        "Qaytadan yozing (ism yoki @username):"
+    )
+
+
 async def handle_schedule_recipients_text(
     update: Update, context: ContextTypes.DEFAULT_TYPE, state: tuple
 ) -> bool:
-    names = scheduler.split_recipients(update.message.text)
+    text = update.message.text
+
+    if _LOOKS_LIKE_FULL_REQUEST.search(text):
+        try:
+            parse = await scheduler.parse_schedule_text(text)
+        except LLMError:
+            parse = None
+
+        if parse is not None and parse.understood:
+            resolved, ambiguous, not_found = await _resolve_recipients(parse.recipients)
+            if not_found:
+                context.user_data["await"] = ("sched_recipients",)
+                await _report_not_found(update, not_found, show_plain_hint=False)
+                return True
+            token = uuid.uuid4().hex[:10]
+            context.bot_data.setdefault("sched_drafts", {})[token] = _new_draft(
+                resolved,
+                ambiguous,
+                parse.message,
+                scheduler.to_utc(parse.send_at_local),
+                parse.send_at_local.strftime("%d.%m.%Y %H:%M"),
+            )
+            await _advance(token, context, update.message)
+            return True
+
+        # AI band yoki tushunolmadi — bosqichma-bosqich rejimga qaytamiz
+        context.user_data["await"] = ("sched_recipients",)
+        await update.message.reply_text(
+            "🤖 Hozir avtomatik tahlil qila olmadim (band yoki tushunarsiz "
+            "chiqdi). Keling, qadam-baqadam davom etamiz.\n\n"
+            "1️⃣ Hozircha FAQAT kimga ekanini yozing — ism yoki @username:"
+        )
+        return True
+
+    names = scheduler.split_recipients(text)
     if not names:
         context.user_data["await"] = ("sched_recipients",)
         await update.message.reply_text("Iltimos, kamida bitta ism yoki @username yozing.")
         return True
 
     resolved, ambiguous, not_found = await _resolve_recipients(names)
-
     if not_found:
-        known = await repo.all_people(15)
-        known_text = ", ".join(p.full_name or p.username or str(p.id) for p in known)
         context.user_data["await"] = ("sched_recipients",)
-        hint = ""
-        if _LOOKS_LIKE_FULL_REQUEST.search(update.message.text):
-            hint = (
-                "\n\n💡 Bu bosqichda FAQAT ism yoki @username yozing — vaqt va "
-                "xabar matnini ALOHIDA, keyingi savollarda so'rayman."
-            )
-        await update.message.reply_text(
-            f"❌ Topilmadi: {', '.join(not_found)}\n\n"
-            f"Bilingan odamlar: {known_text or 'hali hech kim yo‘q'}"
-            f"{hint}\n\n"
-            "Qaytadan yozing (ism yoki @username):"
-        )
+        await _report_not_found(update, not_found, show_plain_hint=False)
         return True
 
     token = uuid.uuid4().hex[:10]
-    context.bot_data.setdefault("sched_drafts", {})[token] = {
-        "resolved": resolved,
-        "ambiguous_queue": list(ambiguous.keys()),
-        "candidates_by_name": ambiguous,
-        "message": None,
-        "send_at_utc": None,
-        "send_at_display": None,
-    }
-    await _advance_recipients(token, context, update.message)
+    context.bot_data.setdefault("sched_drafts", {})[token] = _new_draft(
+        resolved, ambiguous, None, None, None
+    )
+    await _advance(token, context, update.message)
     return True
 
 
@@ -180,8 +245,7 @@ async def handle_schedule_time_text(
 
     draft["send_at_utc"] = scheduler.to_utc(send_at_local)
     draft["send_at_display"] = send_at_local.strftime("%d.%m.%Y %H:%M")
-    context.user_data["await"] = ("sched_message", token)
-    await update.message.reply_text(_PROMPT_MESSAGE)
+    await _advance(token, context, update.message)
     return True
 
 
@@ -195,15 +259,7 @@ async def handle_schedule_message_text(
         return True
 
     draft["message"] = update.message.text
-    names = ", ".join(v[1] for v in draft["resolved"].values())
-    text = (
-        "📅 Rejalashtirilgan xabar:\n\n"
-        f"👤 Kimga: {names}\n"
-        f"🕐 Qachon: {draft['send_at_display']}\n"
-        f"💬 Matn: \"{draft['message']}\"\n\n"
-        "Tasdiqlaysizmi?"
-    )
-    await update.message.reply_text(text, reply_markup=keyboards.schedule_confirm(token))
+    await _advance(token, context, update.message)
     return True
 
 
@@ -249,7 +305,7 @@ async def handle_schedule_callback(update: Update, context: ContextTypes.DEFAULT
                 person.id,
                 person.full_name or person.username or str(person.id),
             )
-        await _advance_recipients(token, context, query)
+        await _advance(token, context, query)
 
     elif action == "confirm":
         token = parts[2]

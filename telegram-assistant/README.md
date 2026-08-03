@@ -146,14 +146,25 @@ sudo systemctl restart assistant
 
 ### Xabarni rejalashtirish (/schedule)
 
-`/schedule` 3 bosqichli — **AI ishlatilmaydi**, shuning uchun Gemini kvotasi
-tugab qolsa ham 100% ishlayveradi:
+Ikki yo'l bilan ishlaydi:
+
+**1. Bitta xabarda hammasi** (qulay, Gemini orqali):
+
+```
+"Bahodirga va Abdulvahob akaga soat 10:00da: Salom, band edim, ertaga boraman"
+```
+
+**2. Bosqichma-bosqich** (kafolatlangan, AI ishlatilmaydi) — agar (1) ishlamasa
+(AI band/kvota tugagan) yoki shunchaki ism yozsangiz, avtomatik shu rejimga
+o'tiladi:
 
 1. **Kimga?** — ism-familiya yoki `@username` (bir nechta bo'lsa vergul bilan:
    `Bahodir, @aziza_k`)
 2. **Qachon?** — `14:00` | `bugun 18:30` | `ertaga 09:00` | `05.08 14:00` |
    `30 daqiqadan keyin`
 3. **Nima deb yozay?** — xabar matni
+
+Ism qidiruvi imlo xatolariga chidamli (masalan "Abdulvahhob" ↔ "Abdulvahob").
 
 - Ism bir nechta odamga mos kelsa — kimni nazarda tutganingizni so'raydi
 - Yuborishdan oldin har doim tasdiq so'raladi (✅/❌)
