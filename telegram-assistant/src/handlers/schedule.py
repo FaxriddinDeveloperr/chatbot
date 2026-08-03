@@ -177,10 +177,15 @@ async def handle_schedule_recipients_text(
     text = update.message.text
 
     if _LOOKS_LIKE_FULL_REQUEST.search(text):
+        parse = None
+        ai_failed = False
         try:
             parse = await scheduler.parse_schedule_text(text)
-        except LLMError:
-            parse = None
+        except LLMError as exc:
+            # Ownerni bezovta qilmaymiz (bosqichma-bosqich rejimga muammosiz
+            # o'tamiz), lekin sababi /logs orqali ko'rinishi kerak.
+            ai_failed = True
+            await repo.log_error(f"/schedule bitta xabarli tahlil ishlamadi: {exc}")
 
         if parse is not None and parse.understood:
             resolved, ambiguous, not_found = await _resolve_recipients(parse.recipients)
@@ -201,10 +206,16 @@ async def handle_schedule_recipients_text(
 
         # AI band yoki tushunolmadi — bosqichma-bosqich rejimga qaytamiz
         context.user_data["await"] = ("sched_recipients",)
+        if ai_failed:
+            reason = (
+                "🤖 Hozir avtomatik tahlil ishlamadi — ehtimol Gemini'ning kunlik "
+                "bepul limiti tugagan (batafsili: /logs). Keling, qadam-baqadam "
+                "davom etamiz.\n\n"
+            )
+        else:
+            reason = "🤖 Xabaringizni tushunolmadim. Keling, qadam-baqadam davom etamiz.\n\n"
         await update.message.reply_text(
-            "🤖 Hozir avtomatik tahlil qila olmadim (band yoki tushunarsiz "
-            "chiqdi). Keling, qadam-baqadam davom etamiz.\n\n"
-            "1️⃣ Hozircha FAQAT kimga ekanini yozing — ism yoki @username:"
+            reason + "1️⃣ Hozircha FAQAT kimga ekanini yozing — ism yoki @username:"
         )
         return True
 
