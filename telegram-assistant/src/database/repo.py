@@ -24,7 +24,7 @@ async def upsert_person(user_id: int, username: str | None, full_name: str) -> P
     async with async_session() as s:
         person = await s.get(Person, user_id)
         if person is None:
-            person = Person(id=user_id, username=username, full_name=full_name)
+            person = Person(id=user_id, username=username, full_name=full_name, message_count=0)
             s.add(person)
         person.username = username
         person.full_name = full_name
